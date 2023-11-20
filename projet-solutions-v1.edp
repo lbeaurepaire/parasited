@@ -1,0 +1,143 @@
+/* DEFINITION DU DOMAINE */
+border bottom(t=0,1){x=32.0*t-16.0; y=-4.0; label=1;};
+border top(t=0,1){x=-32.0*t+16.0; y=4.0; label=3;};
+border left(t=0,1){x=-16.0; y=-8.0*t+4.0; label=4;};
+border right(t=0,1){x=16.0; y=8.0*t-4.0; label=2;};
+
+func perio = [[4,y],[2,y]]; //domaine périodique est-ouest
+
+real x0 = -16.0;
+real x1 = 16.0;
+real y0 = -4.0;
+real y1 = 4.0;
+mesh Th = square(256,64,flags=0,[x0+(x1-x0)*x,y0+(y1-y0)*y]);
+
+
+/* PARAMETRES PHYSIQUES */
+real omega = 7.2921*1e-5;
+real R     = 6.371*1e6;
+real g     = 9.81;
+real H     = 1.0; //aussi 1.630988
+
+real E = sqrt(2.0*R*omega/sqrt(g*H));
+real U = sqrt(g*H);
+
+real phi0 = 0.0;
+real a    = E*sin(phi0);
+real b    = cos(phi0);
+
+/* SCHEMA TEMPOREL */
+real dt    = 0.025;
+real theta = 0.5;
+real mu    = theta*dt;
+real nu    = (1.0-theta)*dt;
+
+/* ESPACES D'APPROXIMATION */
+fespace Uh(Th, P2, periodic=perio);
+fespace Ph(Th, P1, periodic=perio);
+fespace UPh(Th, [P2, P2, P1], periodic=perio);
+
+UPh [u,v,p];
+UPh [uu,vv,pp];
+UPh [uold,vold,pold];
+UPh [uexact,vexact,pexact];
+UPh [udiff,vdiff,pdiff];
+UPh [uT,vT,pT];
+
+/* ECRITURE DU PROBLEME */
+problem Yanai([u, v, p], [uu, vv, pp], solver=GMRES, eps=1.e-7) = 
+  int2d(Th)(u*uu - (a+b*y)*mu*v*uu + mu*dx(p)*uu
+          + v*vv + (a+b*y)*mu*u*vv + mu*dy(p)*vv
+          + p*pp + mu*(dx(u)*pp+dy(v)*pp))
++ int2d(Th)(-uold*uu - nu*(a+b*y)*vold*uu + nu*dx(pold)*uu
+          -  vold*vv + nu*(a+b*y)*uold*vv + nu*dy(pold)*vv
+          -  pold*pp + nu*(dx(uold)*pp+dy(vold)*pp))
++ on(1,3,v=0.0);
+
+/* SOLUTION INITIALE */
+//pas de temps T, on l'utilise aussi pour déterminer la solution exacte [uT,vT,pT]
+int imax=160000;
+ 
+real k = pi/4.0;
+
+//Kelvin
+if(false) {
+  [u, v, p] = [-cos(k*x)*exp(-y*y/2.0), 0, -cos(k*x)*exp(-y*y/2.0)];
+  [uT, vT, pT] = [-cos(k*x-k*imax*dt)*exp(-y*y/2.0), 0, -cos(k*x-k*imax*dt)*exp(-y*y/2.0)];
+  string nomSolution = "kelvin-";
+}
+//Yanai
+if(true) {
+  real omegaY = 1.4670;
+  [u, v, p] = [omegaY*y*sin(k*x)*exp(-y*y/2.0), -cos(k*x)*exp(-y*y/2.0), omegaY*y*sin(k*x)*exp(-y*y/2.0)];
+  [uT, vT, pT] = [omegaY*y*sin(k*x-omegaY*imax*dt)*exp(-y*y/2.0), -cos(k*x - omegaY*imax*dt)*exp(-y*y/2.0), omegaY*y*sin(k*x-omegaY*imax*dt)*exp(-y*y/2.0)];
+  string nomSolution = "yanai-";
+}
+//Symmetric equatorial Rossby wave of index 1
+if(false) {
+  real omegaR1 = -0.22009;
+  real rplus = (2.0*y*y-1.0)/(k-omegaR1)*sin(k*x)*exp(-y*y/2.0);
+  real rmoins = (-1.0/(k+omegaR1))*sin(k*x)*exp(-y*y/2.0);
+  [u, v, p] = [(rmoins+rplus)/2.0, -y*cos(k*x)*exp(-y*y/2.0), (rmoins-rplus)/2.0];
+
+  real rplusT = (2.0*y*y-1.0)/(k-omegaR1)*sin(k*x - omegaR1*imax*dt)*exp(-y*y/2.0);
+  real rmoinsT = (-1.0/(k+omegaR1))*sin(k*x - omegaR1*imax*dt)*exp(-y*y/2.0);
+  [uT, vT, pT] = [(rmoinsT+rplusT)/2.0, -y*cos(k*x)*exp(-y*y/2.0), (rmoinsT-rplusT)/2.0];
+  string nomSolution = "rossby1-";
+}
+//Symmetric equatorial Rossby wave of index 2
+if(false) {
+  real omegaR2 = -0.14032;
+  real rplus = (4.0*y*y*y-6.0*y)/(k-omegaR2)*sin(k*x)*exp(-y*y/2.0);
+  real rmoins = -(4.0*y)/(k+omegaR2)*sin(k*x)*exp(-y*y/2.0);
+  [u, v, p] = [(rmoins+rplus)/2.0, -(2.0*y*y-1.0)*cos(k*x)*exp(-y*y/2.0), (rmoins-rplus)/2.0];
+
+  real rplusT = (4.0*y*y*y-6.0*y)/(k-omegaR2)*sin(k*x - omegaR2*imax*dt)*exp(-y*y/2.0);
+  real rmoinsT = -(4.0*y)/(k+omegaR2)*sin(k*x - omegaR2*imax*dt)*exp(-y*y/2.0);
+  [uT, vT, pT] = [(rmoins+rplus)/2.0, -(2.0*y*y-1.0)*cos(k*x)*exp(-y*y/2.0), (rmoins-rplus)/2.0];
+  string nomSolution = "rossby2-";
+}
+
+
+Uh uplot;
+Uh vplot;
+Ph pplot, pplot320;
+
+real umin, umax, vmin, vmax, pmin, pmax;
+
+/* PROPAGATION DES ONDES */
+imax = 160000;
+
+for (int i=0; i<=imax; i++){
+  uold[]=u[];
+  vold[]=v[];
+  pold[]=p[];
+
+  Yanai;
+
+  uplot=u;
+  vplot=v;
+  pplot=p;
+  pplot320=p-pT;
+
+  cout << "i=" << i+1 << endl;
+  cout << "umin=" << uplot[].min << endl;
+  cout << "umax=" << uplot[].max << endl;
+  cout << "vmin=" << vplot[].min << endl;
+  cout << "vmax=" << uplot[].max << endl;
+  cout << "pmin=" << pplot[].min << endl;
+  cout << "pmax=" << pplot[].max << endl;
+  cout << "p320min=" << pplot320[].min << endl;
+  cout << "p320max=" << pplot320[].max << endl;
+  
+  //plot(p, value=0, wait=0, fill=1,cmm=" dt = "+dt+" imax = "+imax);
+
+  if(i==0)
+  {
+    //NB : liste des caractères interdits pour nom fichier sur W10
+    //                      \ / : * ? " < > |
+      plot(uplot, value=0, wait=0, nbiso=30, ps="P2-P1-SOL-u-256_64-mesh-1-ts-0T.eps");
+      plot(vplot, value=0, wait=0, nbiso=30, ps="P2-P1-SOL-v-256_64-mesh-1-ts-0T.eps");
+      plot(pplot, value=0, wait=0, nbiso=26, ps="P2-P1-SOL-p-256_64-mesh-1-ts-0T.eps", cmm=" i = "+i + " pTmin = "+pplot320[].min + " pTmax = "+pplot320[].max);
+  };
+}

@@ -1,0 +1,90 @@
+border bottom(t=0,1){x=32.0*t-16.0; y=-4.0; label=1;};
+border top(t=0,1){x=-32.0*t+16.0; y=4.0; label=3;};
+border left(t=0,1){x=-16.0; y=-8.0*t+4.0; label=4;};
+border right(t=0,1){x=16.0; y=8.0*t-4.0; label=2;};
+
+// on veut imposer des conditions aux bords périodiques sur les bords 2 (right) et 4 (left)
+// et une condition de glissement u.n=0 (vitesse normale nulle) sur les bords 1 (bottom) et 3 (top)
+// NB : dans le cadre de l'étude de Fourier on remplace la condition de Dirichlet homogène
+// présente sur 1 et 3 par des conditions périodiques.
+
+func perio=[[4,y],[2,y],[1,x],[3,x]];
+
+// construction du maillage 
+// --------------------------------------------------------------------------------------
+
+real x0=-16.0;
+real x1=16.0;
+real y0=-4.0;
+real y1=4.0;
+
+int m=3;
+int n=3;
+
+mesh Th=square(m,n,flags=0,[x0+(x1-x0)*x,y0+(y1-y0)*y]);
+plot(Th,wait=1);
+
+// Mesh 1 : flags = 0
+// Mesh 2 : flags = 1
+
+// Choix des parametres physiques et parametres d'adimensionalisasion
+//----------------------------------------------------------------------
+
+real omega=7.2921*1e-5;  // vitesse angulaire de la terre
+real R=6.371*1e6;        // rayon de la terre (en m)
+real g=9.81;              // 9.81;        //acceleration pesanteur
+real H=1.6309888;              //1.6309888  // hauteur moyenne du fluide (equivalent depth)
+
+real E=sqrt(2.0*R*omega/sqrt(g*H)); // en fait il s'agit de E^(1/4)
+real U=sqrt(g*H);
+
+real phi0=pi/4.;             // latitude
+real a=E*sin(phi0);        // parametre de Coriolis = a + b * y
+real b=0.;
+
+//Pour Fourrier il faut b = 0 et f constant
+
+// Choix des espaces d'approximation : P2 pour la vitesse, P1 pour la pression
+//-----------------------------------------------------------------------------------------
+
+fespace Uh(Th,P2,periodic=perio);
+fespace Ph(Th,P1,periodic=perio);
+
+fespace UPh(Th,[P2,P2,P1],periodic=perio);
+
+// u, v, p                    : vitesse et pression au temps n+1
+// uu, vv                     : fonctions test pour la vitesse
+// pp                         : fonction test pour la pression
+
+UPh [u,v,p];
+UPh [uu,vv,pp];
+
+// Ecriture du probleme avec u, v, et p chapeaux les amplitudes de fourier
+// --------------------------------------------------------------------------
+
+varf YanaiTerme([u,v,p],[uu,vv,pp], solver=GMRES, eps=1.e-7) = 
+    int2d(Th)(-(a+b*y)*v*uu + g*dx(p)*uu
+             + (a+b*y)*u*vv + g*dy(p)*vv
+             + H*dx(u)*pp + H*dy(v)*pp);
+            
+varf YanaiMasse([u,v,p],[uu,vv,pp], eps=1.e-7) = 
+     int2d(Th)(u*uu + v*vv + p*pp);
+
+
+matrix A = YanaiTerme(UPh, UPh);
+matrix B = YanaiMasse(UPh, UPh);
+
+cout << "taille de A: " << A.n << " et " << A.m << endl;
+cout << "taille de B: " << B.n << " et " << B.m << endl;
+//En n=m=3 on a des matrices de taille 96x96
+
+// EXPORT DES MATRICES CALCULEES DANS A.m et B.m
+// ----------------------------------------------------------------------------
+
+ofstream fileA("A.m");
+fileA.precision(14);
+fileA << A << "\n";
+
+ofstream fileB("B.m");
+fileB.precision(14);
+fileB << B << "\n";
